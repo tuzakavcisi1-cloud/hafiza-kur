@@ -20,6 +20,9 @@ skill/scripts/deneme/
 /b4/
 /h1test/
 sabotaj.log
+# HUKUM KAPISI'nin okudugu birlesik kosum logu (CI'da her iste yeniden uretilir,
+# yerelde de elle uretilebilir). Kanit degil ARA CIKTI; kanit hukum satiridir.
+hukum.log
 
 # --- paketleme çıktısı (kaynağı skill/ dizinidir) ---
 *.skill

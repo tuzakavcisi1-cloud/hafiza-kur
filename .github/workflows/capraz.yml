@@ -2,8 +2,21 @@
 #
 # FAZ 0 — ÖLÇ, DÜZELTME.
 # Bu iş akışı hiçbir şeyi düzeltmez; yalnız "hangi platformda ne kırılıyor"u ÖLÇER.
-# Bu yüzden HER adım `continue-on-error: true` ile koşar: amaç yeşil almak değil,
-# KIRMIZI LİSTEYİ ÜRETMEK. Liste çıktıktan sonra bu bayrak kaldırılır.
+# Bu yüzden ÖLÇÜM adımları `continue-on-error: true` ile koşar: amaç yeşil almak
+# değil, KIRMIZI LİSTEYİ ÜRETMEK. Liste çıktıktan sonra bu bayrak kaldırılır.
+#
+# FAZ A-0 (Y-2) SONRASI TEK İSTİSNA — "HUKUM KAPISI":
+#   Ölçüm adımı yumuşak kalır, ama HÜKMÜN VARLIĞI pazarlık konusu değildir.
+#   Ölçüldü (run #2 / f6f7fde): windows py3.11 ve py3.13'te t_y42 58 senaryonun
+#   TAMAMINI koştu (91 sn / 110 sn) ve rapor döngüsünün İLK satırında
+#   UnicodeEncodeError ile çöktü; 58 hükmün tamamı basılmadan kayboldu.
+#   `continue-on-error` bunu yuttu, iş YEŞİL göründü — hatta API'de adımın
+#   `conclusion` alanı bile "success" döndü (gerçek sonuç `outcome`ta saklanır).
+#   Yani çapraz ölçümün 1/3'ü KÖRDÜ ve bu körlük YEŞİL TİK olarak raporlanıyordu.
+#   Bu yüzden her `kanit` işi artık çıktısını hukum.log'a da yazar ve sonda
+#   `continue-on-error` OLMAYAN bir kapı, beklenen hüküm satırlarının BASILDIĞINI
+#   ölçer. Hüküm kaybolursa iş KIRMIZI olur. Kapı hükümlerin YEŞİL olduğunu
+#   söylemez — sadece KAYBOLMADIĞINI.
 #
 # Public repo'da GitHub-hosted runner'lar (ubuntu/windows/macos) ücretsiz ve
 # dakika limitsizdir. Private repo'da çarpanlar: Windows 2x, macOS 10x.
@@ -46,40 +59,60 @@ jobs:
         shell: bash
         run: python -c "import hashlib;print(hashlib.sha256(open('skill/scripts/hafiza.py','rb').read()).hexdigest().upper())"
 
+      # Her olcum adimi ciktisini ../../hukum.log'a da yazar; sondaki HUKUM KAPISI
+      # o logda hukum satirlarini arar. `tee` kullanilmasi bilincli: adimin kendi
+      # ciktisi Actions arayuzunde gorunmeye devam etsin.
+
       - name: t_y3 — temiz hata kanitlari (20 senaryo)
         continue-on-error: true
         shell: bash
         working-directory: skill/scripts
-        run: python t_y3.py
+        run: python t_y3.py 2>&1 | tee -a ../../hukum.log
 
       - name: isir — taze projede mutant kaniti
         continue-on-error: true
         shell: bash
         working-directory: skill/scripts
         run: |
-          mkdir -p deneme && git init -q deneme
-          python hafiza.py kur  --kok=deneme --ad "CI"
-          python hafiza.py kapi --kok=deneme || echo "kapi exit=$?"
-          python hafiza.py isir --kok=deneme || echo "isir exit=$?"
+          {
+            mkdir -p deneme && git init -q deneme
+            python hafiza.py kur  --kok=deneme --ad "CI"
+            python hafiza.py kapi --kok=deneme || echo "kapi exit=$?"
+            python hafiza.py isir --kok=deneme || echo "isir exit=$?"
+          } 2>&1 | tee -a ../../hukum.log
 
       - name: isir — derle sonrasi TAM kosum
         continue-on-error: true
         shell: bash
         working-directory: skill/scripts
         run: |
-          python hafiza.py not   --kok=deneme --konu=genel-durum --metin="ci ilk not"
-          python hafiza.py derle --kok=deneme
-          python hafiza.py isir  --kok=deneme || echo "isir exit=$?"
+          {
+            python hafiza.py not   --kok=deneme --konu=genel-durum --metin="ci ilk not"
+            python hafiza.py derle --kok=deneme
+            python hafiza.py isir  --kok=deneme || echo "isir exit=$?"
+          } 2>&1 | tee -a ../../hukum.log
 
-      - name: t_y42 — davranis kanitlari (58 senaryo, ~13 dk)
+      # SURE: "~13 dk" beyani YANLISTI ve run #2'de olculdu — asagidaki gercek
+      # duvar saati degerleri o kosumdandir (yerel Linux'ta da 60 sn):
+      #   ubuntu 64/73 sn - macos 53/46 sn - windows 91/110 sn (windows'ta COKTU)
+      # Belgedeki her sayi gibi bu da BAGLAMLIDIR: GitHub-hosted runner, soguk
+      # calisma alani. Onur'un kendi Windows'unda daha uzun surmesi beklenir;
+      # o sure OLCULMEDI, buraya yazilmaz.
+      - name: t_y42 — davranis kanitlari (58 senaryo, ~1-2 dk runner'da)
         continue-on-error: true
         shell: bash
         working-directory: skill/scripts
-        run: python t_y42.py
+        run: python t_y42.py 2>&1 | tee -a ../../hukum.log
 
       # NOT: B-6 (300k satirda kapi < 8 sn) CI runner'inda buyuk olasilikla KALDI der.
       # Bu bir KOD kusuru degil, TEST kusurudur (kalibrasyonsuz mutlak duvar saati).
       # Fable 4. tur, §3.6. Faz F'de referans-ise gore kalibre edilecek.
+
+      # ---- HUKUM KAPISI — continue-on-error YOK. Hukum kaybolursa is KIRMIZI. ----
+      - name: HUKUM KAPISI — kosucular hukmunu BASTI mi?
+        if: always()
+        shell: bash
+        run: python faz0/hukum_kapisi.py hukum.log
 
       - name: kirik liste artefakti
         if: always()
@@ -87,6 +120,7 @@ jobs:
         with:
           name: kanit-${{ matrix.os }}-py${{ matrix.python }}
           path: |
+            hukum.log
             skill/scripts/hafiza_hata_izi.txt
             skill/scripts/deneme/**
           if-no-files-found: ignore
@@ -109,6 +143,30 @@ jobs:
         continue-on-error: true
         shell: bash
         run: python faz0/win_kill_probu.py
+
+  # ---------------------------------------------------------------------------
+  # 2b) Y-2 MUTANTI — Faz A-0'da eklenen cikti-kodlamasi korumasi ISIRIYOR mu?
+  #     "Olculmeyen kapinin hukmu YOKTUR" (doktrin 1). Koruma eklemek yetmez;
+  #     sokuldugunde kosucunun COKTUGU gosterilmelidir.
+  #     Bu is `continue-on-error` KULLANMAZ: mutant kacarsa koruma kordur ve
+  #     bunun kirmizi gorunmesi gerekir.
+  # ---------------------------------------------------------------------------
+  y2_mutant:
+    name: Y-2 mutanti (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: koruma sokulunce kosucu cokuyor mu?
+        shell: bash
+        run: python faz0/y2_mutant.py
 
   # ---------------------------------------------------------------------------
   # 3) ORTAM SINIFI — root olmayan kullanici · dolu disk · salt-okunur

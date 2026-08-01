@@ -40,10 +40,14 @@ yanlış değişikliktir.
    cd skill/scripts
    python3 hafiza.py isir --kok=<taze proje>     # mutant kanıtı
    python3 t_y3.py                               # temiz hata kanıtları
-   python3 t_y42.py                              # davranış kanıtları (~13 dk)
+   python3 t_y42.py                              # davranış kanıtları
    sha256sum hafiza.py
+   cd .. && python3 faz0/y2_mutant.py            # koşucular hükmünü basabiliyor mu
    ```
    Belgedeki her sayıyı kendi koşumunla doğrula, **sonra** konuş.
+   **Süre buraya yazılmaz** — bir kez "~13 dk" yazıldı, yanlıştı, ve o yanlış
+   sayı bir sonraki oturumun teşhisini saptırdı. Ölçülen: GitHub runner'da
+   t_y42 46–110 sn, cloud Linux'ta 60 sn. Kendi makinende ne çıkarsa o.
 5. Kod/içerik yazmadan **ÖNCE** tasarımı işaretlenebilir şıklarla sun, onay bekle.
 
 ## 3. BEDELİ ÖDENMİŞ DERSLER (13 denetim turu)
@@ -61,6 +65,13 @@ yanlış değişikliktir.
 - **Sayı bağlamsız beyan edilmez** ("36/36" yalnız `derle` koşulmuş projede doğru).
 - **Örtüşen tespit körlüğü maskeler.** İki kapı aynı mutantı yakalıyorsa, mutant
   ikisini de ölçüyor sanılır; oysa birini hiç ölçmüyor olabilir.
+- **Korumayı ürüne koydun; ÖLÇÜM ARACINA koydun mu?** (Y-2, Faz A-0) Çıktı
+  kodlaması koruması `hafiza.py`'de vardı, `t_y42.py`/`t_y3.py`'de yoktu. Sonuç:
+  Windows'ta 58 senaryonun tamamı koştu ve **58 hükmün tamamı basılmadan kayboldu**
+  — ürün değil, ÖLÇÜM kayboldu. Bir korumanın kapsamı "ürün" ile bitmez.
+- **Bir kusurun görünmemesi, yerel ayarın onu maskelemesi olabilir.** Y-2 Türkçe
+  Windows'ta (cp1254) çökmez, İngilizce runner'da (cp1252) çöker. "Bende çalışıyor"
+  bir hüküm değil, bir kod sayfası tesadüfüdür.
 - Kör nokta çoğu zaman bir düşünce hatası değil, bir **ORTAM eksiğidir.**
   Ölçemiyorsan ölçebilecek ortamı **KUR**: root olmayan kullanıcı, dolu disk,
   salt-okunur bağlama, Windows, macOS.
@@ -140,6 +151,10 @@ hangisi" sorusunun iki cevabı olamaz). Paket `paketle.sh` ile `skill/`'ten üre
 
 Tuzak Avcısı uygulama/içerik geliştirmesi · TSK ve gelir hukuku · Reels-bülten
 operasyonu. Bunlar **ayrı projelerdir**, buraya karıştırılmaz.
+
+Depo `tuzakavcisi1-cloud` hesabı altındadır; bu bir **barındırma tercihidir**,
+marka kararı değildir — Tuzak Avcısı bu proje için **kapsam dışıdır**. Taşımak
+ileride her zaman mümkündür (GitHub transfer geçmişi korur).
 
 ## 8. OTURUM KAPANIŞI
 

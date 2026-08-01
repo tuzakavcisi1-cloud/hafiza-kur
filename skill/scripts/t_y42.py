@@ -10,6 +10,46 @@ import os, sys, json, shutil, subprocess, tempfile, hashlib
 import time as _time
 import datetime as _dt
 
+
+def _cikti_kodlamasini_guvenceye_al():
+    """Y-2 (Faz A-0): bu kosucunun KENDI raporunu basabilmesini guvenceye alir.
+
+    OLCULDU (CI run #2, f6f7fde, windows-latest py3.11 VE py3.13):
+      58 senaryonun TAMAMI kostu (91 sn / 110 sn), SONUC listesi doldu, ve rapor
+      dongusunun ILK satirinda coktu:
+        t_y42.py:1586  UnicodeEncodeError: 'charmap' codec can't encode
+                       character '\\u0131' in position 67
+      58 hukmun TAMAMI basilmadan kayboldu; `continue-on-error: true` bunu yuttu
+      ve is YESIL kaldi. Bu, B4-2'nin (toplanan bulgular basilmadan kaybolur)
+      olcum araci katmanindaki birebir tekraridir.
+
+    SINIF Windows'a OZGU DEGIL, "tek-baytli kod sayfasina dusmus stdout"tur.
+    Bu ciktinin non-ASCII kadrosu ve kod sayfasi kapsami (olculdu):
+        U+0131 'ı'  cp1252=YOK  cp1254=VAR  cp850=VAR   cp437=YOK
+        U+2014 '—'  cp1252=VAR  cp1254=VAR  cp850=YOK   cp437=YOK
+        U+00A7 '§'  cp1252=VAR  cp1254=VAR  cp850=VAR   cp437=YOK
+        U+00B7 '·'  cp1252=VAR  cp1254=VAR  cp850=VAR   cp437=VAR
+    Yani Turkce Windows'ta (cp1254) bu kosucu COKMEZ — kusurun bugune kadar
+    gorunmemesinin sebebi budur. Ingilizce runner (cp1252) ve konsol kod
+    sayfasi (cp850/cp437) altinda COKER.
+
+    KOPYA BILINCLIDIR: hafiza.py'de ayni adli fonksiyon vardir, ama olcum araci
+    olctugu motora `import` ile baglanmaz — motor import aninda coktugu gun
+    kosucu hic baslamaz ve tam da olcmesi gereken seyi olcemez.
+    Isirdiginin kaniti: faz0/y2_mutant.py
+    """
+    for akis in (sys.stdout, sys.stderr):
+        try:
+            akis.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            try:
+                akis.reconfigure(errors="replace")
+            except Exception:
+                pass
+
+
+_cikti_kodlamasini_guvenceye_al()   # Y-2 KORUMASI — mutant bu satiri soker
+
 M = os.path.abspath(os.path.join(os.path.dirname(__file__), "hafiza.py"))
 PY = sys.executable
 SONUC = []

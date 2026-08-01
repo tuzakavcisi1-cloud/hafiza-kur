@@ -8,6 +8,33 @@ gecmemeli VE cikis kodu sifirdisi olmali VE mesaj TEMIZ (taninabilir bir hukum) 
 """
 import os, sys, json, shutil, subprocess, tempfile
 
+
+def _cikti_kodlamasini_guvenceye_al():
+    """Y-2 (Faz A-0): bu kosucunun KENDI raporunu basabilmesini guvenceye alir.
+
+    t_y42.py'de olculen sinifin ayni gerekcesi. Bu kosucunun kadrosu daha dar
+    ama KIRILGANLIGI ayni (olculdu):
+        U+2014 '—'  cp1252=VAR  cp1254=VAR  cp850=YOK  cp437=YOK
+    Yani t_y3 cp1252'de SANSLA ayakta kaliyor ('ı' basmiyor), cp850/cp437
+    konsolunda ise em-dash yuzunden COKER — ve coktugunde 20 senaryonun hukmu
+    B4-2 sinifinda kaybolur. Sansa dayali ayaktaligi "temiz" saymiyoruz.
+    Isirdiginin kaniti: faz0/y2_mutant.py (t_y3 kolu cp850 ile olcer)
+
+    KOPYA BILINCLIDIR: hafiza.py'de ayni adli fonksiyon vardir; olcum araci
+    olctugu motora import ile baglanmaz.
+    """
+    for akis in (sys.stdout, sys.stderr):
+        try:
+            akis.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            try:
+                akis.reconfigure(errors="replace")
+            except Exception:
+                pass
+
+
+_cikti_kodlamasini_guvenceye_al()   # Y-2 KORUMASI — mutant bu satiri soker
+
 MOTOR = os.path.abspath(os.path.join(os.path.dirname(__file__), "hafiza.py"))
 PY = sys.executable
 
