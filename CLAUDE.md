@@ -72,6 +72,11 @@ yanlış değişikliktir.
 - **Bir kusurun görünmemesi, yerel ayarın onu maskelemesi olabilir.** Y-2 Türkçe
   Windows'ta (cp1254) çökmez, İngilizce runner'da (cp1252) çöker. "Bende çalışıyor"
   bir hüküm değil, bir kod sayfası tesadüfüdür.
+- **Bir prob ORTAMI mı ölçüyor, ARACI mı?** Kabul ölçütü seçmeden önce bunu ayır.
+  `win_kill_probu.py` `hafiza.py`'yi hiç çağırmaz — Python/Windows davranışını
+  ölçer. Bir DEVİR notuna "Y-1'in ölçüsü: prob exit 0" yazıldı; **ulaşılamaz** bir
+  hedefti, çünkü ortam düzeltmeden bağımsız. Düzeltmenin ölçütü, aracı çağıran
+  senaryodur (burada t_y42'nin `B-5/B-9`'u). Ortam probu değerlidir ama hüküm vermez.
 - Kör nokta çoğu zaman bir düşünce hatası değil, bir **ORTAM eksiğidir.**
   Ölçemiyorsan ölçebilecek ortamı **KUR**: root olmayan kullanıcı, dolu disk,
   salt-okunur bağlama, Windows, macOS.

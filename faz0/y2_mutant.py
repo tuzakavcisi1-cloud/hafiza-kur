@@ -71,6 +71,7 @@ CAGRI = "_cikti_kodlamasini_guvenceye_al()"
 ISARET = "# Y-2 KORUMASI"
 
 SONUC = []          # (ad, isirdi: True/False/None, ayrinti)
+SINIRLAR = []       # hukum DEGIL: olcumun sinirina dair notlar
 
 
 def kayit(ad, isirdi, ayrinti):
@@ -141,19 +142,33 @@ HUKUM_DESENI = {
 
 
 def olc(ad, betik, kod_sayfasi, temiz_dizin, mutant_dizin):
-    """Once TEMIZ kopyanin hukmunu basabildigini, sonra MUTANTIN basamadigini olcer."""
+    """Once TEMIZ kopyanin hukmunu basabildigini, sonra MUTANTIN basamadigini olcer.
+
+    KONTROL KOLU BILINCLI OLARAK **HUKUM SATIRININ VARLIGI**DIR, cikis kodu DEGIL.
+    Bu ayrimi ilk surum yapmiyordu ve run #3'te kendi kusurunu uretti: Windows'ta
+    temiz t_y42 hukmunu BASTI ama exit=1 dondu (55 gecti - 2 kaldi), cunku o iki
+    senaryo Windows'ta gercekten kaliyor. Kol `rc_t == 0 and temiz_hukum` oldugu
+    icin olcum "OLCULEMEDI"ye dustu ve mesaj "hukum BASAMADI" YALANI'ni bastu —
+    oysa hukum=True idi. Kosucunun YESIL olmasi ile kosucunun HUKMUNU BASABILMESI
+    ayri iki sorudur (bkz. CLAUDE.md: derinlik ile kapsam ayri iki sorudur).
+    Cikis kodu artik hukum belirlemez; olcumun sinirina not olarak yazilir."""
     try:
         rc_t, ct = kos(betik, temiz_dizin, kod_sayfasi)
     except subprocess.TimeoutExpired:
         kayit(ad, None, "TEMIZ kopya zaman asimina ugradi — olculemedi")
         return
     temiz_hukum = bool(HUKUM_DESENI[betik].search(ct))
-    if not (rc_t == 0 and temiz_hukum):
+    if not temiz_hukum:
         kayit(ad, None,
-              "TEMIZ kopya %s altinda hukum BASAMADI (exit=%d, hukum=%s) — "
-              "koruma calismiyor ya da baska bir kusur var; mutant anlamsiz"
-              % (kod_sayfasi, rc_t, temiz_hukum))
+              "TEMIZ kopya %s altinda HUKUM SATIRINI BASAMADI (exit=%d) — "
+              "koruma calismiyor; mutant anlamsiz" % (kod_sayfasi, rc_t))
         return
+    if rc_t != 0:
+        SINIRLAR.append(
+            "%s @ %s: TEMIZ kopya hukmunu BASTI ama exit=%d — kosucunun bazi "
+            "senaryolari bu ortamda KALIYOR. Bu, cikti kodlamasi korumasiyla "
+            "ILGISIZ, AYRI bir bulgudur; mutant hukmunu etkilemez."
+            % (betik, kod_sayfasi, rc_t))
     try:
         rc_m, cm = kos(betik, mutant_dizin, kod_sayfasi)
     except subprocess.TimeoutExpired:
@@ -205,11 +220,12 @@ def main():
         if hizli:
             kayit("t_y42 @ cp1252 (noktasiz i orada YOK)", None,
                   "--hizli ile ATLANDI — PASS DEGIL, OLCULEMEDI")
-            notlar = ["--hizli: olu tuzak olcumu de atlandi"]
+            SINIRLAR.append("--hizli: olu tuzak olcumu de atlandi")
         else:
             olc("t_y42 @ cp1252 (noktasiz i orada YOK)", "t_y42.py", "cp1252",
                 temiz, mutant)
-            notlar = [olu_tuzak("t_y42.py", "cp1254", mutant)]
+            SINIRLAR.append(olu_tuzak("t_y42.py", "cp1254", mutant))
+        notlar = SINIRLAR
 
         print()
         isiran = kacan = olculemeyen = 0

@@ -37,7 +37,10 @@ import sys
 import traceback as _tb
 import unicodedata
 
-SURUM = "2.4.1"   # Fable 3. tur (B-1..B-11) + ic denetim regresyonlari + paketleme
+SURUM = "2.5.0-dev"   # Faz A basladi. 2.4.1 DENETLENMIS bir bayt kumesidir (Fable 4.
+# tur tam onu olctu); baytlar degistigi anda ayni numarayi tasimak YALAN olur ve
+# "aktif surum hangisi" sorusunun iki cevabi olur (H5 doktrini). "-dev" soneki
+# bilincli: depo PUBLIC ama YAYIN YOK; numara Faz F bitince "2.5.0" olur.
                   # sonrasi ic denetim: P-1 (H9 yanlis teshis), A-1 (kilit KAPSAMI),
                   # A-2 (cikis kodu sozlesmesi), A-3 (stderr kirik boru)
 RC_AD = ".hafizarc"
@@ -671,20 +674,29 @@ def kilit_al(y):
               "  Ayni anda iki yazma, canli hafizada KAYIP GUNCELLEME uretir.\n"
               "  Oteki islem bittiginde yeniden dene."
               % (rel, sahip, _kilit_tanisi(sahip, rel)))
-    with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as f:
-        f.write("pid=%d · %s · komut: %s\n"
-                % (os.getpid(), _dt.datetime.now().isoformat(timespec="seconds"),
-                   " ".join(sys.argv[1:])[:100]))
+    # B4-1 (Fable 4. tur, YUKSEK) — SAHIPLIK, O_EXCL BASARILI OLUR OLMAZ KAYDEDILIR.
+    # Eskiden bu iki atama asagidaki `with` blogundan SONRAYDI. ENOSPC gibi bir hal
+    # yazmayi (ya da kapanistaki flush'i) dusurdugunde sahiplik HIC kaydedilmiyordu;
+    # atexit'teki `kilit_birak` ilk satirinda `if not p: return` ile cikiyor, dosya
+    # KALIYOR ve proje KALICI olarak yazmaya kapaniyordu — arac ici cikis yolu yok.
+    # Olculdu: faz0/ortam_olcum.sh B4-1 kolu ("disk bosaldiktan sonra kalan .kilit: 1").
+    # Sira artik dogru: once SAHIPLENIR, sonra yazilir. Yazma duserse kilit BIZIMDIR
+    # ve birakilir.
     KILIT[0] = p
     # IC DENETIM (B-7): "pid yoksa bizimdir" kurali, BASKA bir surecin O_EXCL ile
     # actigi ama pid'ini HENUZ yazmadigi kilidi de silebiliyordu (mikrosaniyelik
     # pencere; aracin kendi tavsiyesi 'kilidi elle sil' oldugu icin senaryo gercekci).
     # Artik olusturdugumuz dosyanin KIMLIGINI (inode) sakliyoruz; birakirken ayni
-    # dosya degilse dokunmuyoruz.
+    # dosya degilse dokunmuyoruz. `stat(p)` DEGIL `fstat(fd)`: yol yeniden cozulurse
+    # araya baska bir dosya girebilir; fd elimizdeki dosyanin ta kendisidir.
     try:
-        KILIT[1] = os.stat(p).st_ino
+        KILIT[1] = os.fstat(fd).st_ino
     except OSError:
         KILIT[1] = None
+    with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as f:
+        f.write("pid=%d · %s · komut: %s\n"
+                % (os.getpid(), _dt.datetime.now().isoformat(timespec="seconds"),
+                   " ".join(sys.argv[1:])[:100]))
     return p
 
 def agactaki_kilitler(kok):
@@ -715,10 +727,63 @@ def _kilit_pid(metin):
     m = re.search(r"pid=(\d+)", metin or "")
     return int(m.group(1)) if m else None
 
+def _surec_yasiyor_win(pid):
+    """Windows'ta pid canliligi. os.kill(pid, 0) BURADA VARLIK SINAMAZ.
+
+    Y-1 (Faz A, dokunus 1) — OLCULDU (CI run #2, faz0/win_kill_probu.py, win32
+    py3.11): os.kill(pid, 0) hem YASAYAN hem OLU pid icin ISTISNA ATMADI.
+    Sebep: Windows'ta `signal.CTRL_C_EVENT == 0`'dir; cagri bir varlik sinamasi
+    degil Ctrl+C YAYINI denemesidir (bpo-14480 CLOSED-REJECTED). Cagri zararsiz
+    (olculdu: cocuk surec hayatta kaldi) ama HICBIR SEY OLCMEZ — asagidaki POSIX
+    dalinin `except (OSError, AttributeError)` kolu Windows'ta HIC calismaz ve
+    teshis HER ZAMAN "pid YASIYOR" der. Sonucu: bayat kilit asla taninamaz,
+    B4-1'in sizan kilidi Windows'ta temizlenemez, ve arac kullaniciya kendinden
+    emin bicimde YANLIS seyi soyler.
+
+    ctypes STDLIB'dir; CLAUDE.md 4'teki sifir-bagimlilik cizgisi korunur.
+    Donusler — 'bilmiyorum' ile 'yok' BILEREK ayrilir (doktrin 2):
+      handle + STILL_ACTIVE           -> True   surec VAR ve calisiyor
+      handle + baska cikis kodu       -> False  surec BITMIS (handle acik kalmis)
+      ERROR_ACCESS_DENIED (5)         -> True   surec VAR, erisemiyoruz
+      ERROR_INVALID_PARAMETER (87)    -> False  boyle bir pid YOK
+      baska hata / ctypes yok         -> None   OLCULEMEDI
+
+    BILINEN SINIR (olculmedi): STILL_ACTIVE 259'dur ve 259 ayni zamanda gecerli
+    bir cikis kodudur. Tam 259 ile cikmis bir surec 'yasiyor' gorunur. Nadir;
+    daha genis cozum (job object / surec baslangic zamani) bu turun disinda."""
+    try:
+        import ctypes
+        k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        k32.OpenProcess.restype = ctypes.c_void_p     # 64-bit handle c_int'e SIGMAZ
+        k32.OpenProcess.argtypes = (ctypes.c_ulong, ctypes.c_int, ctypes.c_ulong)
+        k32.CloseHandle.argtypes = (ctypes.c_void_p,)
+        h = k32.OpenProcess(0x1000, False, pid)       # QUERY_LIMITED_INFORMATION
+        if not h:
+            _hata = ctypes.get_last_error()
+            if _hata == 5:                            # ERROR_ACCESS_DENIED
+                return True
+            if _hata == 87:                           # ERROR_INVALID_PARAMETER
+                return False
+            return None
+        try:
+            k32.GetExitCodeProcess.argtypes = (ctypes.c_void_p,
+                                               ctypes.POINTER(ctypes.c_ulong))
+            _kod = ctypes.c_ulong(0)
+            if k32.GetExitCodeProcess(h, ctypes.byref(_kod)):
+                return _kod.value == 259              # STILL_ACTIVE
+            return None
+        finally:
+            k32.CloseHandle(h)
+    except Exception:                                 # noqa: BLE001
+        return None                                   # OLCULEMEDI — 'yok' DEMEYIZ
+
+
 def _surec_yasiyor(pid):
     """pid hala calisiyor mu? Olcemiyorsak None doneriz — 'yok' DEMEYIZ."""
     if pid is None:
         return None
+    if sys.platform == "win32":
+        return _surec_yasiyor_win(pid)
     try:
         os.kill(pid, 0)                       # POSIX: sinyal yollamadan varlik sinamasi
         return True
@@ -727,7 +792,7 @@ def _surec_yasiyor(pid):
     except PermissionError:
         return True                           # baskasinin sureci: VAR
     except (OSError, AttributeError):
-        return None                           # Windows/kisitli ortam: OLCEMIYORUZ
+        return None                           # kisitli ortam: OLCEMIYORUZ
 
 def _kilit_yasi(metin):
     """Kilit dosyasindaki zaman damgasindan yas (saniye); cozulemezse None."""

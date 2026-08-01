@@ -23,8 +23,19 @@ NEDEN ONEMLI:
   uretiyor.
 
 BU BETIK KODA DOKUNMAZ. Yalniz olcer ve rapor eder.
-Cikis kodu:  0 = hipotez CURUTULDU (kod guvende)  ·  1 = hipotez DOGRULANDI (kusur)
-             2 = OLCULEMEDI
+
+⚠️ BU BIR **ORTAM PROBUDUR**, BIR DUZELTMENIN OLCUTU DEGILDIR. (Faz A notu)
+   Betik hafiza.py'yi HIC cagirmaz; olctugu sey Python'un ve Windows'un
+   davranisidir. Dolayisiyla Faz A'da Y-1 kapandiktan SONRA da exit 1 dondurur —
+   cunku os.kill(pid, 0) hala varlik sinamaz. Bir ara DEVIR notunda "olcusu:
+   win_kill_probu.py exit 0" yazildi; bu ULASILAMAZ bir hedefti ve ortam ile
+   aracin olcumunu birbirine karistiriyordu.
+   Duzeltmenin gercek olcutu: t_y42'nin "B-5/B-9 kilit" senaryosu (bayat kilit
+   teshis ediliyor mu) ve hafiza.py'deki `_surec_yasiyor_win`.
+
+Cikis kodu:  1 = bu ortamda os.kill(pid,0) VARLIK SINAMAZ -> tuzak VAR
+             0 = bu ortamda varlik sinar (POSIX gibi davraniyor)
+             2 = OLCULEMEDI (platform win32 degil, ya da prob coktu)
 """
 import os
 import subprocess
@@ -142,9 +153,17 @@ def main():
 
     kusur = any(b.startswith(("KANITLANDI", "KISMEN")) for b in bulgular)
     if kusur:
-        yaz("SONUC: HIPOTEZ DOGRULANDI — Y-1 gercek bir kusurdur. (exit 1)")
+        yaz("SONUC: ORTAM GERCEGI — bu platformda os.kill(pid, 0) VARLIK SINAMAZ.")
+        yaz("  Bu bir hafiza.py HUKMU DEGILDIR ve Faz A'dan SONRA da degismez:")
+        yaz("  olculen sey Python/Windows davranisidir, aracin davranisi degil.")
+        yaz("  exit 1 = 'bu ortamda tuzak VAR'; 'arac kirik' DEMEK DEGILDIR.")
+        yaz("  Aracin bu gercege gore davrandigini olcen yerler:")
+        yaz("    - t_y42 senaryosu 'B-5/B-9 kilit' (bayat kilit teshis ediliyor mu)")
+        yaz("    - hafiza.py `_surec_yasiyor_win` (ctypes/OpenProcess dali)")
         return 1
-    yaz("SONUC: HIPOTEZ CURUTULDU — kod bu kolda guvende. (exit 0)")
+    yaz("SONUC: Bu ortamda os.kill(pid, 0) istisna atiyor — POSIX gibi davraniyor.")
+    yaz("  hafiza.py'nin POSIX dali burada yeterli olurdu; ctypes dali gereksiz.")
+    yaz("  (exit 0)")
     return 0
 
 
