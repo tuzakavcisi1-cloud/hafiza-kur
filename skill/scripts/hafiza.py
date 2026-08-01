@@ -4217,6 +4217,40 @@ def cmd_isir(a):
 
 # ---------------------------------------------------------------- main
 
+def _boru_koptu_mu(e):
+    """Bu OSError bir BORU KOPMASI mi, yoksa GERCEK bir yazma hatasi mi?
+
+    Y-3 (Faz A, dokunus 3) — OLCULDU, tahmin degil. faz0/boru_probu.py,
+    CI run #5, windows-latest py3.11 VE py3.13, stderr OKUNARAK:
+        head -1/-3/-5/-20 -> OSError: [Errno 22] Invalid argument
+    Yani Windows kirik boruda `BrokenPipeError` DEGIL, ham `OSError` errno
+    **22 (EINVAL)** atiyor. Eski kosul yalniz `errno == EPIPE` (32) idi ve
+    Windows'ta HIC eslesmiyordu; istisna `raise` ile disari siziyordu. Sonuc
+    tek kok sebep, IKI ayri yuzey:
+        py3.11 -> kapanista "Exception ignored" -> Py_FinalizeEx duser -> exit 120
+        py3.13 -> main() disina cikar -> `except BaseException` -> exit 3
+    Her ikisinde de KIRMIZI kapi hukmu (exit 1) kayboluyordu.
+
+    EINVAL **YALNIZ Windows'ta** boru kopmasi sayilir. Linux/macOS'ta EINVAL
+    bambaska bir sey demektir (hizalama, gecersiz bayrak) ve onu yutmak GERCEK
+    bir hatayi gizlerdi — yani olculmemis bir korluk acardi. Bu yuzden platform
+    kosulu var: bu fonksiyonun POSIX davranisi eskisiyle BIT BIT AYNIDIR.
+
+    ENOSPC (disk dolu) BILEREK yutulmaz: onu yutmak B4-1'in tam tersi bir kusur
+    uretirdi — arac "yazdim" der, yazmamis olurdu."""
+    kod = getattr(e, "errno", None)
+    if kod == _errno.EPIPE:
+        return True
+    if sys.platform == "win32":
+        if kod == _errno.EINVAL:                      # 22 — olculen hal
+            return True
+        # ERROR_BROKEN_PIPE / ERROR_NO_DATA: ayni sinifin oteki iki yuzu.
+        # OLCULMEDI (run #5'te EINVAL geldi); savunma amacli, ADDITIVE.
+        if getattr(e, "winerror", None) in (109, 232):
+            return True
+    return False
+
+
 class _KirikBoruyaDayanikliAkis:
     """stdout sarmalayicisi: TUKETICI boruyu kapatinca komut COKMEZ, SUSAR.
 
@@ -4257,7 +4291,7 @@ class _KirikBoruyaDayanikliAkis:
         except (BrokenPipeError, ValueError):
             self._dusur(); return len(s)
         except OSError as e:
-            if getattr(e, "errno", None) == _errno.EPIPE:
+            if _boru_koptu_mu(e):
                 self._dusur(); return len(s)
             raise
 
@@ -4269,7 +4303,7 @@ class _KirikBoruyaDayanikliAkis:
         except (BrokenPipeError, ValueError):
             self._dusur()
         except OSError as e:
-            if getattr(e, "errno", None) == _errno.EPIPE:
+            if _boru_koptu_mu(e):
                 self._dusur()
             else:
                 raise

@@ -121,6 +121,35 @@ SAF_KORUMALI = (
     "sys.exit(7)\n"
 )
 
+# hafiza.py'nin Faz A dokunus 3 ONCESI stratejisinin BIREBIR taklidi:
+# yalniz EPIPE yutulur. Bu kol duzeltmeden SONRA da KIRMIZI kalmalidir —
+# taklit ettigi sey ESKI stratejidir, bugunku kod degil. Kalici kanit:
+# "dar filtre neden yetmiyor" sorusu bir daha sorulmasin.
+SAF_EPIPE = (
+    "import errno, os, sys\n"
+    "class S:\n"
+    "    def __init__(s, a): s._a = a\n"
+    "    def _dus(s):\n"
+    "        s._a = open(os.devnull, 'w')\n"
+    "    def write(s, t):\n"
+    "        try: return s._a.write(t)\n"
+    "        except (BrokenPipeError, ValueError): s._dus(); return len(t)\n"
+    "        except OSError as e:\n"
+    "            if getattr(e, 'errno', None) == errno.EPIPE: s._dus(); return len(t)\n"
+    "            raise\n"
+    "    def flush(s):\n"
+    "        try: s._a.flush()\n"
+    "        except (BrokenPipeError, ValueError): s._dus()\n"
+    "        except OSError as e:\n"
+    "            if getattr(e, 'errno', None) == errno.EPIPE: s._dus()\n"
+    "            else: raise\n"
+    "    def __getattr__(s, n): return getattr(s._a, n)\n"
+    "sys.stdout = S(sys.stdout)\n"
+    "for i in range(%d):\n"
+    "    print('satir %%06d ' %% i + 'x' * 60)\n"
+    "sys.exit(7)\n"
+)
+
 SAF_KORUMALI_FD = SAF_KORUMALI.replace(
     "sys.exit(7)\n",
     "try: sys.stdout.flush()\n"
@@ -135,6 +164,7 @@ SAF_KORUMALI_FD = SAF_KORUMALI.replace(
 def kol_a():
     yaz("[A] SAF PYTHON — hukum (exit 7) boruya bagli mi? hafiza.py YOK")
     for ad, kod in (("ciplak         ", SAF),
+                    ("yalniz-EPIPE   ", SAF_EPIPE),
                     ("sarmalayicili  ", SAF_KORUMALI),
                     ("sarmalayici+fd ", SAF_KORUMALI_FD)):
         satirlar = []
@@ -151,6 +181,14 @@ def kol_a():
                 ORTAM.append(
                     "ciplak Python exit 7'yi KORUMUYOR (%s donuyor, %d satir). "
                     "Beklenen: hukmu koruma isi TAMAMEN aracin uzerindedir." % (rc, n))
+            if ad.strip() == "yalniz-EPIPE" and rc != 7:
+                # HUKUM DEGIL: bu kol hafiza.py'nin ESKI stratejisini taklit eder
+                # ve duzeltmeden sonra da kirmizi kalmasi BEKLENIR. Kaydi kalici:
+                # dar filtrenin bu ortamda neden yetmedigini gosterir.
+                ORTAM.append(
+                    "yalniz-EPIPE filtresi bu ortamda YETMIYOR (exit %s, %d satir) — "
+                    "kirik boru EPIPE'tan BASKA bir errno ile geliyor. hafiza.py'nin "
+                    "dokunus 3 ONCESI stratejisi tam buydu." % (rc, n))
             if ad.strip() == "sarmalayicili" and rc != 7:
                 BULGULAR.append(
                     "SARMALAYICI YETMIYOR: yalniz write/flush sarmak exit 7'yi korumuyor "
