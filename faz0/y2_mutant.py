@@ -44,6 +44,7 @@ KULLANIM
 import os
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -83,16 +84,37 @@ class MutantKurulamadi(Exception):
 
 
 def hazirla(hedef, sok):
-    """skill/scripts'i hedefe kopyalar. sok=True ise Y-2 korumasini kaldirir."""
-    os.makedirs(hedef, exist_ok=True)
-    for ad in ("hafiza.py", "t_y3.py", "t_y42.py"):
-        shutil.copy2(os.path.join(KAYNAK, ad), os.path.join(hedef, ad))
+    """skill/scripts'i hedefe kopyalar. sok=True ise Y-2 korumasini kaldirir.
+
+    Y-4 (Faz A): burada olusan HER OSError MutantKurulamadi'ya cevrilir. Eskiden
+    cevrilmiyordu ve sonucu SAHTE KIRMIZI idi: salt-okunur bir kaynak agacinda
+    (paketten acilmis skill, CI cache, ro mount) bu fonksiyon ham traceback basip
+    exit 1 veriyordu — sozlesmede 1 = "MUTANT KACTI, koruma kor". Yani OLCULEMEYEN
+    hal, GERCEK KIRMIZIDAN ayirt edilemez bicimde raporlaniyordu. Aracin kendi
+    doktrini bunun tersini soyler: olculemeyene 'temiz' denmez, ama olculemeyene
+    'kacti' da DENMEZ; ARAC KUSURU ayri bir hukumdur (exit 3)."""
+    try:
+        os.makedirs(hedef, exist_ok=True)
+        for ad in ("hafiza.py", "t_y3.py", "t_y42.py"):
+            h = os.path.join(hedef, ad)
+            shutil.copy2(os.path.join(KAYNAK, ad), h)
+            # copy2 KAYNAGIN izin bitlerini de tasir. Kaynak salt-okunursa mutant
+            # kopya da salt-okunur olur ve sabotaj YAZILAMAZ. Burasi mutantin KENDI
+            # gecici calisma alanidir; KAYNAGA dokunulmaz.
+            os.chmod(h, os.stat(h).st_mode | stat.S_IWUSR)
+    except OSError as e:
+        raise MutantKurulamadi(
+            "kaynak kopyalanamadi: %s — mutantin calisma alani YAZILABILIR olmali. "
+            "Bu bir kapi hukmu degil, ORTAM kusurudur." % e)
     if not sok:
         return
     for ad in ("t_y3.py", "t_y42.py"):
         p = os.path.join(hedef, ad)
-        with open(p, encoding="utf-8") as f:
-            metin = f.read()
+        try:
+            with open(p, encoding="utf-8") as f:
+                metin = f.read()
+        except OSError as e:
+            raise MutantKurulamadi("mutant kopyasi okunamadi: %s" % e)
         # 1) modul duzeyindeki CAGRI satirini sok
         yeni, n = re.subn(
             r"(?m)^" + re.escape(CAGRI) + r"\s*" + re.escape(ISARET) + r".*$",
@@ -111,11 +133,16 @@ def hazirla(hedef, sok):
             "def _MUTANT_NOOP(*a, **k):\n    raise RuntimeError('mutant')\nimport os, sys",
             1,
         )
-        with open(p, "w", encoding="utf-8", newline="\n") as f:
-            f.write(yeni)
-        # 3) sabotaj gercekten oturdu mu -> KANIT
-        with open(p, encoding="utf-8") as f:
-            k = f.read()
+        try:
+            with open(p, "w", encoding="utf-8", newline="\n") as f:
+                f.write(yeni)
+            # 3) sabotaj gercekten oturdu mu -> KANIT
+            with open(p, encoding="utf-8") as f:
+                k = f.read()
+        except OSError as e:
+            raise MutantKurulamadi(
+                "mutant kopyasina YAZILAMADI (%s). Sabotaj oturmadan olcum "
+                "yapilamaz; bu ORTAM kusurudur, kapi hukmu DEGIL." % e)
         if "akis.reconfigure(" in k or (CAGRI + "   " + ISARET) in k:
             raise MutantKurulamadi("%s: sabotaj oturmadi, koruma hala ayakta" % ad)
 
@@ -204,7 +231,14 @@ def main():
     print("  mod     : %s" % ("HIZLI (yalniz t_y3)" if hizli else "TAM"))
     print("=" * 78)
 
-    gecici = tempfile.mkdtemp(prefix="y2_")
+    # Y-4: mkdtemp de OSError atabilir (TMPDIR salt-okunur / dolu). Try'in DISINDA
+    # kaldigi surece o hal ham traceback + exit 1 = "MUTANT KACTI" yalanini uretir.
+    try:
+        gecici = tempfile.mkdtemp(prefix="y2_")
+    except OSError as e:
+        print("\nARAC KUSURU: gecici dizin acilamadi: %s" % e)
+        print("Hukum VERILEMEZ. Bu bir kapi hukmu degil, ORTAM kusurudur.")
+        return 3
     temiz = os.path.join(gecici, "temiz")
     mutant = os.path.join(gecici, "mutant")
     try:

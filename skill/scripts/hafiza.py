@@ -34,6 +34,7 @@ import shutil
 import stat
 import subprocess
 import sys
+import threading as _threading
 import traceback as _tb
 import unicodedata
 
@@ -242,20 +243,29 @@ def slug(s):
         s = s[:120].rstrip("-")
     return s or "konu"
 
+# B4-5: hata izinin yazilabilecegi TEK yer proje agacidir. Kok cozulur cozulmez
+# buraya kaydedilir; cozulemediyse iz DOSYAYA HIC YAZILMAZ (cwd'ye DUSULMEZ).
+_IZ_KOK = [""]
+_IZ_DIZIN = [""]
+
+
 def kok_bul(arg):
     if arg:
         k = os.path.abspath(arg)
         if not os.path.isdir(k):
             oldur("--kok yolu YOK: " + k)
+        _IZ_KOK[0] = k
         return k
     if os.environ.get("HAFIZA_KOK"):
         k = os.path.abspath(os.environ["HAFIZA_KOK"])
         if not os.path.isdir(k):
             oldur("HAFIZA_KOK yolu YOK: " + k)
+        _IZ_KOK[0] = k
         return k
     d = os.path.abspath(os.getcwd())
     while True:
         if os.path.isfile(os.path.join(d, RC_AD)):
+            _IZ_KOK[0] = d
             return d
         ust = os.path.dirname(d)
         if ust == d:
@@ -957,6 +967,8 @@ class Y:
         self.canli = _yol(kok, rc["canli"])
         self.kural = _yol(kok, rc["kural_evi_dosya"])
         self.h = _yol(kok, rc.get("hafiza_dizini", "arsiv/hafiza"))
+        _IZ_KOK[0] = kok            # B4-5: iz hedefi projeye baglanir
+        _IZ_DIZIN[0] = self.h
         self.gunluk = os.path.join(kok, "gunluk")
         self.gunluk_ars = os.path.join(self.h, "gunluk")
         self.kararlar = os.path.join(kok, "kararlar")
@@ -1702,6 +1714,42 @@ def basliksal(s):
 
 # ---------------------------------------------------------------- not / derle
 
+def _stdin_suresi():
+    try:
+        s = int(os.environ.get("HAFIZA_STDIN_ZAMAN_ASIMI", "15"))
+        return s if s > 0 else 15
+    except ValueError:
+        return 15
+
+
+def _stdin_oku():
+    """B4-10'un ikinci yarisi: stdin SURESIZ beklenmez.
+
+    Eskiden `sys.stdin.read()` dogrudan cagriliyordu. Kapanmayan bir boruya bagli
+    bir CI adiminda bu cagri SONSUZA KADAR bekler: ne fragman yazilir, ne hukum
+    basilir, ne de bir hata gorunur — is yalnizca "asili" kalir ve kilit de
+    uzerinde durur. Zaman asimi, ASILI KALMAYI bir HUKME cevirir.
+
+    Neden thread: `select` Windows'ta yalniz soketlerde calisir, `signal.alarm`
+    yalniz POSIX'te ve yalniz ana thread'te. Daemon thread her uc platformda ayni
+    davranir ve stdlib disina cikmaz (sifir bagimlilik kirilmaz).
+    Donus: metin, ya da zaman asiminda None."""
+    kutu = []
+
+    def _oku():
+        try:
+            kutu.append(sys.stdin.read())
+        except Exception:
+            kutu.append("")
+
+    t = _threading.Thread(target=_oku, daemon=True)
+    t.start()
+    t.join(_stdin_suresi())
+    if t.is_alive():
+        return None
+    return kutu[0] if kutu else ""
+
+
 def cmd_not(a):
     kok = kok_bul(a.kok); rc = rc_oku(kok); y = Y(kok, rc)
     zincir_on_kontrol(y, rc)  # yarim is birakma: bozuk zincirde ISE BASLAMA
@@ -1712,9 +1760,21 @@ def cmd_not(a):
         oldur("--tur soylardan biri olmali: durum|karar|bulgu|ders|devir|sonraki")
     govde = a.metin
     if not govde and not sys.stdin.isatty():
-        govde = sys.stdin.read()
-    if not govde or len(govde.strip()) < 3:
-        oldur("Bos fragman yazilmaz. --metin ver ya da stdin'den boru et.")
+        govde = _stdin_oku()
+        if govde is None:
+            oldur("stdin %d sn icinde KAPANMADI — boru acik ama veri bitmiyor.\n"
+                  "  Fragman YAZILMADI (kilit birakildi). Dogrudan ver: --metin \"...\"\n"
+                  "  Sureyi degistir: HAFIZA_STDIN_ZAMAN_ASIMI=<saniye>"
+                  % _stdin_suresi())
+    # B4-10 (Fable 4. tur, DUSUK): esik `len(govde.strip()) < 3` iken mesaj "Bos
+    # fragman yazilmaz" diyordu. --metin=\"sv\" veren kullanici mesaji kendi
+    # girdisiyle bagdastiramiyordu. Belge de bir arayuzdur; mesaj da oyle.
+    if not govde or not govde.strip():
+        oldur("Fragman GOVDESI yok. --metin ver ya da stdin'den boru et.")
+    if len(govde.strip()) < 3:
+        oldur("Fragman govdesi COK KISA: %d karakter (en az 3). Verdigin: %r\n"
+              "  Bu 'bos' degil, KISA. Alti ay sonra okunacak bir kayit birak."
+              % (len(govde.strip()), govde.strip()[:20]))
 
     # ANAHTAR SOZLUGU DISIPLINI: bilinmeyen konu sessizce dogmaz.
     if os.path.isfile(y.konular):
@@ -2691,8 +2751,28 @@ def cmd_devral(a):
 
 # ---------------------------------------------------------------- korunan
 
+def korunan_blok_bul(metin, bas, son):
+    """KORUNAN blogun KANONIK kapsami. Tek ev: `korunan` ve H8 AYNI fonksiyonu
+    cagirir — iki ayri regex iki ayri sinir demektir ve o ayrisma B4-6'nin ta
+    kendisiydi.
+
+    B4-6 (Fable 4. tur, ORTA): kapsam `re.escape(bas) + ".*?" + re.escape(son)`
+    idi — CIMRI eslesme korumayi `son`un ILK karakterinde bitiriyordu. Ayni
+    satirin devamini, yani kuralin GOVDESINI degistirmek kapiyi YESIL birakiyordu
+    (olculdu: "BUDAMA TESTI: KURAL IPTAL EDILDI" dosyada dururken exit 0).
+    Kapi kor DEGILDI; SINIRI yanlisti. Kapsam artik `son`un bulundugu satirin
+    SONUNA kadar uzanir."""
+    return re.search(re.escape(bas) + r".*?" + re.escape(son) + r"[^\n]*", metin, re.S)
+
+
+def korunan_blok_bul_eski(metin, bas, son):
+    """v2.4.1 kapsami — YALNIZCA gecis teshisi icin (bkz. H8). Yeni beyan URETMEZ."""
+    return re.search(re.escape(bas) + r".*?" + re.escape(son), metin, re.S)
+
+
 def cmd_korunan(a):
-    """H8: bir dosyadaki isaretli blogu KORUNAN ilan eder (hash'lenir).
+    """H8: bir dosyadaki isaretli blogu KORUNAN ilan eder (hash'lenir). Kapsam:
+    korunan_blok_bul (B4-6 — `son` isaretinin SATIR KUYRUGU dahil).
     Blok bilincli degistiginde kapi KIRMIZI yanar — dogrusu budur: 'beyan et ya da kir'."""
     kok = kok_bul(a.kok); rc = rc_oku(kok); y = Y(kok, rc)
     zincir_on_kontrol(y, rc)  # yarim is birakma: bozuk zincirde ISE BASLAMA
@@ -2711,7 +2791,7 @@ def cmd_korunan(a):
               "  Benzersiz olmayan isaretle koruma OLCULEMEZ: sahte bir kopya tahrifi gizler.\n"
               "  Daha benzersiz bir isaret sec (ornek: <!--KORU:PROTOKOL-BAS-->)."
               % (a.dosya, _t.count(a.bas), _t.count(a.son)))
-    m = re.search(re.escape(a.bas) + r".*?" + re.escape(a.son), _t, re.S)
+    m = korunan_blok_bul(_t, a.bas, a.son)
     if not m:
         oldur("blok bulunamadi: [%s .. %s]" % (a.bas, a.son))
     d = defter_liste(y.korunan, "bloklar", {"dosya": str, "bas": str, "son": str, "sha": str})
@@ -2723,7 +2803,13 @@ def cmd_korunan(a):
                          "tarih": bugun()})
     yaz(y.korunan, json.dumps(d, ensure_ascii=False, indent=1) + "\n")
     zincir_halka(y, "KORUNAN", a.gerekce.strip(), ek={"dosya": dosya_ad})
-    print("KORUNDU: %s [%s .. %s] sha %s..." % (dosya_ad, a.bas[:20], a.son[:20], sha(m.group(0))[:16]))
+    # B4-6: korunan ARALIK da basilir. Denetci "neyin korundugunu" ciktidan
+    # okuyamiyordu; kapsam sessiz kaldigi surece sinir hatasi gorunmez kalir.
+    _g = m.group(0)
+    print("KORUNDU: %s [%s .. %s] sha %s..." % (dosya_ad, a.bas[:20], a.son[:20], sha(_g)[:16]))
+    print("  kapsam: %d bayt · %d satir · son satir kuyrugu: %s"
+          % (len(_g.encode("utf-8")), _g.count("\n") + 1,
+             repr(_g.split("\n")[-1][len(a.son.split("\n")[-1]):]) if a.son in _g else "?"))
 
 # ---------------------------------------------------------------- KAPI
 
@@ -2805,12 +2891,17 @@ def _kapi_govde(a, F, N, O):
             fail("H0", "CIPA BOZULDU: _KAYNAK.md SHA %s… != _CIPA.json %s…"
                  % (s[:16], str(c.get("sha"))[:16]))
             F.append("      -> Snapshot KANIT TABANIDIR; degisirse H1 olcumu ANLAMSIZDIR.")
-        for h in zincir_dogrula(y):
+        # B4-11 (Fable 4. tur): zincir_dogrula IKI KEZ cagriliyordu; ikisi de tum
+        # zinciri gezip TUM defter SHA'larini yeniden hesapliyordu (~%45 israf,
+        # 4001 halkada 0.36 -> 0.24 sn). Zincir append-only ve sikistirmasiz
+        # oldugu icin bu maliyet projenin omru boyunca DOGRUSAL buyur. Tek cagri.
+        _zincir_hukumleri = zincir_dogrula(y)
+        for h in _zincir_hukumleri:
             if h.startswith("~"):
                 O.append("H0: " + h[1:])      # kanit YETERSIZ — hukum degil, isaret
             else:
                 fail("H0", h)
-        _zh = [x for x in zincir_dogrula(y) if not x.startswith("~")]
+        _zh = [x for x in _zincir_hukumleri if not x.startswith("~")]
         N.append("H0: cipa %s · zincir %s" % ("saglam" if s == c.get("sha") else "BOZUK",
                  "saglam" if not _zh else "KIRIK"))
 
@@ -3106,11 +3197,28 @@ def _kapi_govde(a, F, N, O):
                            "olcum BELIRSIZ; sahte kopya ile blok tahrifi gizlenebilir."
                      % (b["dosya"], n_bas, n_son))
                 continue
-            m = re.search(re.escape(b["bas"]) + r".*?" + re.escape(b["son"]), t, re.S)
+            m = korunan_blok_bul(t, b["bas"], b["son"])
             if not m:
                 fail("H8", "KORUNAN blok bulunamadi: %s [%s..%s]" % (b["dosya"], b["bas"][:24], b["son"][:24]))
             elif sha(m.group(0)) != b["sha"]:
-                fail("H8", "KORUNAN blok DEGISMIS (beyansiz): %s — bilincliyse: hafiza.py muhur" % b["dosya"])
+                # B4-6 GECIS HUKMU: v2.4.1 kapsami `son`un satir kuyrugunu HIC
+                # olcmuyordu. Kuyruk disarida birakilinca sha tutuyorsa, dosya
+                # tahrif edilmis OLABILIR de OLMAYABILIR de — eski beyanda o
+                # baytlarin kaydi YOK. "DEGISMIS (beyansiz)" demek ASILSIZ TAHRIF
+                # SUCLAMASI olurdu (B-5 senaryosunun yasakladigi sey); "gecti"
+                # demek ise kuyruk deligini acik birakirdi. Ucuncu hukum: OLCULEMEZ.
+                _me = korunan_blok_bul_eski(t, b["bas"], b["son"])
+                if _me is not None and sha(_me.group(0)) == b["sha"]:
+                    _kuyruk = m.group(0)[len(_me.group(0)):]
+                    fail("H8", "KORUNAN blok KAPSAMI GENISLEDI (B4-6): %s — beyan "
+                               "v2.4.1 kapsamiyla yapilmis ve '%s' isaretinin SATIR "
+                               "KUYRUGUNU hic olcmuyordu. Bugunku kuyruk: %s\n"
+                               "      Bu kuyrugun beyandan bu yana degisip degismedigi "
+                               "OLCULEMEZ (eski beyanda kaydi yok). GOZLE dogrula, "
+                               "sonra yeniden beyan et: hafiza.py korunan --dosya=%s"
+                         % (b["dosya"], b["son"][:24], repr(_kuyruk), b["dosya"]))
+                else:
+                    fail("H8", "KORUNAN blok DEGISMIS (beyansiz): %s — bilincliyse: hafiza.py muhur" % b["dosya"])
         N.append("H8: %d korunan blok" % len(kor))
 
     # ---- H9 GERCEK (git) -----------------------------------------------
@@ -4498,14 +4606,18 @@ def _guvenli_calistir():
                 pass
             sys.exit(3)
         iz = _tb.format_exc()
-        try:
-            kayit_p = os.path.join(os.getcwd(), "hafiza_hata_izi.txt")
-            with open(kayit_p, "w", encoding="utf-8", newline="\n") as f:
-                f.write("hafiza.py %s · %s\nkomut: %s\n\n%s"
-                        % (SURUM, _dt.datetime.now().isoformat(timespec="seconds"),
-                           " ".join(sys.argv[1:]), iz))
-        except OSError:
-            kayit_p = None
+        govde = ("hafiza.py %s · %s\nkomut: %s\n\n%s"
+                 % (SURUM, _dt.datetime.now().isoformat(timespec="seconds"),
+                    " ".join(sys.argv[1:]), iz))
+        kayit_p = None
+        for _hedef in _iz_hedefi():      # ilk YAZILABILEN aday; hicbiri olmayabilir
+            try:
+                with open(_hedef, "w", encoding="utf-8", newline="\n") as f:
+                    f.write(govde)
+                kayit_p = _hedef
+                break
+            except OSError:
+                continue
         son = [s for s in iz.strip().split("\n") if s.strip()][-1]
         try:
             _yaz_hata(son, kayit_p)
@@ -4517,6 +4629,39 @@ def _guvenli_calistir():
         # hata)" diyordu. Uc halin ucu de ayni sinif: ISLEM TAMAMLANAMADI, HUKUM
         # YOK. 2 artik yalniz `oldur()`un verdigi TEMIZ KULLANIM/GIRDI hukmudur.
         sys.exit(3)
+
+def _iz_hedefi():
+    """B4-5 (Fable 4. tur, ORTA): hata izi KOSULSUZ `os.getcwd()` altina yaziliyordu.
+    `--kok` baska yerdeyken orasi proje agacinin DISIDIR — `cli_yol_coz`'un
+    "hafiza ve denetim izi proje agacinin DISINDA yasayamaz" sozlesmesinin ihlali,
+    ve bunu yapan `kapi`, yani SALT-OKUMA olmasi gereken OLCUM komutu. Olculdu:
+    cwd `/` iken iz `/hafiza_hata_izi.txt`e, motorun kaynak dizininde kosarken
+    `skill/scripts/` altina dustu (mutlak yerel yollar + yigin izi; o dizin
+    pekala baska birinin git deposu olabilir).
+
+    Artik: iz proje agacinin ICINDE dogar ya da HIC DOGMAZ. Kok cozulememisse
+    (cokme kok cozumunden ONCE olduysa) dosya yazilmaz, hukum yalniz stderr'e
+    basilir — izi yazamamak ASIL HUKMU bastirmamalidir.
+
+    Donus: aday yollarin listesi (bos olabilir). Cagiran ilk YAZILABILENI kullanir;
+    hafiza dizini salt-okunur olabilir (cokmenin sebebi bizzat o olabilir) ve o
+    halde kok denenir."""
+    kok = _IZ_KOK[0]
+    if not kok or not os.path.isdir(kok):
+        return []
+    adaylar = []
+    for d in (_IZ_DIZIN[0], os.path.join(kok, "arsiv", "hafiza"), kok):
+        if not d or not os.path.isdir(d) or d in adaylar:
+            continue
+        try:                      # hedef GERCEKTEN kok altinda mi (symlink dahil)
+            if os.path.commonpath([os.path.realpath(d), os.path.realpath(kok)]) \
+                    != os.path.realpath(kok):
+                continue
+        except (ValueError, OSError):
+            continue
+        adaylar.append(d)
+    return [os.path.join(d, "hafiza_hata_izi.txt") for d in adaylar]
+
 
 def _yaz_hata(son, kayit_p):
     sys.stderr.write(

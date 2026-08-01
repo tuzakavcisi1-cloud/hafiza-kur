@@ -169,6 +169,58 @@ jobs:
         run: python faz0/y2_mutant.py
 
   # ---------------------------------------------------------------------------
+  # 2b-2) Y-4 MUTANTI — OLCUM ARACI, OLCEMEDIGINI "KACTI" DIYE RAPORLUYOR MU?
+  #     Olculdu (Faz A, bulut Linux): salt-okunur kaynak agacinda y2_mutant ham
+  #     PermissionError basip exit 1 verdi. Sozlesmede 1 = "MUTANT KACTI".
+  #     Yani OLCULEMEYEN hal, GERCEK KIRMIZIDAN ayirt edilemez bicimde
+  #     raporlaniyordu. Sahte kirmizi, gercek kirmiziyi degersizlestirir.
+  #     `continue-on-error` YOK: olcum aracinin hukum sozlesmesi bir kapidir.
+  # ---------------------------------------------------------------------------
+  y4_mutant:
+    name: Y-4 mutanti / olcum araci sozlesmesi (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: y2_mutant olcemedigini ARAC KUSURU diye mi raporluyor?
+        shell: bash
+        run: python faz0/y4_mutant.py
+
+  # ---------------------------------------------------------------------------
+  # 2b-3) FAZ A SENARYOLARI — B4-5 / B4-6 / B4-10 / B4-11 duzeltmeleri ISIRIYOR MU?
+  #     Her duzeltmeye AYRI senaryo, her senaryoya AYRI sabotaj: duzeltme
+  #     sokulunce ESKI kusur yeniden URETILMELI. Uretemiyorsa senaryo komsu bir
+  #     sinifi olcuyordur ve hukmu yoktur.
+  #     Windows notu: B4-5 kolu salt-okunur dizinle cokme uretir; uretemezse
+  #     senaryo kendini OLCULEMEDI ilan eder (exit 2) — sessiz PASS vermez.
+  #     `continue-on-error` YOK.
+  # ---------------------------------------------------------------------------
+  fazA_senaryolari:
+    name: Faz A senaryolari (${{ matrix.os }} py${{ matrix.python }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python: ["3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: duzeltmeler isiriyor mu (sabotajla sinanmis)
+        shell: bash
+        run: python faz0/fazA_senaryolari.py
+
+  # ---------------------------------------------------------------------------
   # 2c) Y-3 PROBU — kirik boru HUKMU kaybediyor mu, VE HANGI MEKANIZMAYLA?
   #     Iki python surumu BILEREK ayri: run #3/#4'te ayni komut windows py3.11'de
   #     120, py3.13'te 3 dondu — iki AYRI mekanizma. Tek surumle kosmak birini
