@@ -169,6 +169,33 @@ jobs:
         run: python faz0/y2_mutant.py
 
   # ---------------------------------------------------------------------------
+  # 2c) Y-3 PROBU — kirik boru HUKMU kaybediyor mu, VE HANGI MEKANIZMAYLA?
+  #     Iki python surumu BILEREK ayri: run #3/#4'te ayni komut windows py3.11'de
+  #     120, py3.13'te 3 dondu — iki AYRI mekanizma. Tek surumle kosmak birini
+  #     tumden kor birakir.
+  #     `continue-on-error: true` BILINCLI: bu is bir OLCUM, henuz bir kapi degil.
+  #     Y-3 tam kapandiginda bayrak kaldirilir ve exit 0 sart kosulur.
+  # ---------------------------------------------------------------------------
+  boru_probu:
+    name: Y-3 probu (${{ matrix.os }} py${{ matrix.python }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python: ["3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: kirik boru hukmu kaybediyor mu?
+        continue-on-error: true
+        shell: bash
+        run: python faz0/boru_probu.py
+
+  # ---------------------------------------------------------------------------
   # 3) ORTAM SINIFI — root olmayan kullanici · dolu disk · salt-okunur
   #     Fable 4. tur §9: "Kor noktan bir dusunce hatasi degil, bir ORTAM eksigi."
   #     Uc YUKSEK bulgunun ucu de (B4-1, B4-3, B4-4) yalniz burada gorunuyor.

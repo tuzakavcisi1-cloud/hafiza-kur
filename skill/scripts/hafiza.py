@@ -4241,6 +4241,13 @@ class _KirikBoruyaDayanikliAkis:
             self._a = open(os.devnull, "w", encoding="utf-8")
         except OSError:
             self._a = None
+        # Y-3 (Faz A, dokunus 2): boru koptugu ANDA alttaki fd'yi de devnull'a
+        # cevir. Sebep: bu nesneyi degistirmek YETMIYOR — yorumlayici KAPANISTA
+        # akislari yeniden flush eder ve o flush kopmus boruya giderse CPython
+        # cikis kodunu 120'ye ZORLAR (Py_FinalizeEx basarisiz). Olculdu:
+        # CI run #3, windows py3.11 -> `kapi | head` KIRMIZI iken [120,120,120].
+        # fd devnull'a bakiyorsa kapanis flush'i artik patlayacak bir yere yazmaz.
+        _bpe_sessizlestir()
 
     def write(self, s):
         if self._a is None:
@@ -4277,6 +4284,27 @@ def _bpe_sessizlestir():
         os.dup2(_dn, sys.stdout.fileno())
     except (OSError, ValueError, AttributeError):
         pass
+
+
+# Y-3: komutun HESAPLADIGI hukum. None = henuz hesaplanmadi.
+# Boru koptugunda hukum ATILMAZ; `_guvenli_calistir` buradan geri alir.
+_HUKUM = [None]
+
+
+def _cikisi_guvenceye_al():
+    """Y-3 (Faz A, dokunus 2) — hukum HESAPLANDIKTAN sonra, yorumlayici
+    kapanisindan ONCE cagrilir. Bu noktadan sonra stdout'a yazilacak hicbir sey
+    hukmu degistiremez; amac kapanistaki flush'in hukmu KAYBETTIRMESINI onlemek.
+
+    Sira onemli: once FLUSH (boru saglamsa cikti gercekten gider; kopmussa
+    sarmalayici yutar), SONRA fd devnull'a. Ters sirada bekleyen tampon
+    devnull'a giderdi — yani kusuru duzeltirken CIKTIYI YUTARDIK."""
+    for akis in (sys.stdout, sys.stderr):
+        try:
+            akis.flush()
+        except Exception:                       # noqa: BLE001
+            pass
+    _bpe_sessizlestir()
 
 def _cikti_kodlamasini_guvenceye_al():
     """Fable Bolum D: Windows'ta stdout konsol kod sayfasina (cp1254) duser ve
@@ -4367,7 +4395,12 @@ def main():
     p.add_argument("--kok"); p.set_defaults(fn=cmd_isir)
 
     a = ap.parse_args()
-    sys.exit(a.fn(a) or 0)
+    # Y-3: hukum ONCE hesaplanir ve KAYDEDILIR, sonra cikis guvenceye alinir,
+    # EN SON cikilir. Eskiden tek satirdi (`sys.exit(a.fn(a) or 0)`) ve hukum
+    # yorumlayici kapanisina kadar korumasiz kaliyordu.
+    _HUKUM[0] = a.fn(a) or 0
+    _cikisi_guvenceye_al()
+    sys.exit(_HUKUM[0])
 
 
 def _guvenli_calistir():
@@ -4393,8 +4426,15 @@ def _guvenli_calistir():
         # ile sarilidir ve yazma hatasini yutup devnull'a gecer, komut TAMAMLANIR.
         # Buraya gelinirse hukum BILINMIYOR demektir; 0 DONMEYIZ (asagiyi oku).
         _bpe_sessizlestir()
-        # A-2 (v2.4.1): buraya gelindiyse hukum BILINMIYOR — bu bir kullanim
-        # hatasi (2) degil, OLCUM YAPILAMADI halidir.
+        # Y-3 (Faz A, dokunus 2): hukum HESAPLANMISSA boru onu DEGISTIREMEZ.
+        # Olculdu (CI run #3/#4, windows py3.13): `kapi | head` KIRMIZI iken
+        # [3,3,3] donuyordu — yani GERCEK bir bulgu "ARAC KUSURU"na cevriliyordu.
+        # Ayni sinif Linux'ta sarmalayici sokulerek birebir uretildi
+        # (faz0/boru_probu.py sabotaji): borusuz=1, boruyla [3,3,3,3].
+        if _HUKUM[0] is not None:
+            sys.exit(_HUKUM[0])
+        # A-2 (v2.4.1): hukum GERCEKTEN bilinmiyor (komut daha bitmemisti) —
+        # bu bir kullanim hatasi (2) degil, OLCUM YAPILAMADI halidir.
         sys.exit(3)
     except RecursionError:
         # json ayristiricisi asiri ic-ice girdide boyle atar
