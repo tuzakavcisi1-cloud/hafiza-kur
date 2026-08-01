@@ -82,6 +82,27 @@ yanlış değişikliktir.
   adları · diskteki dosya adları. Çevirmek zinciri kırar.
 - **`.gitattributes`'taki `* -text` gevşetilemez** — gerekçesi dosyanın içinde.
 
+## 4.1 GIT — İŞ BÖLÜMÜ VE ORTAM TUZAĞI
+
+**PUSH VE COMMIT ONUR'DADIR.** Ajan depoyu hazırlar, dosyaları yazar, CI
+sonuçlarını okur — ama `git commit` / `git push` **koşmaz**. Onur koşar.
+
+**Cowork'ün yerel VM mount'unda dosya SİLİNEMİYOR.** Bu yüzden bağlı klasördeki
+depoda **hiçbir `git` komutu koşma** — `git status` dahil. Her koşum
+`.git/index.lock` bırakır ve bir sonraki komutu bloke eder; kilit de silinemez.
+
+Bu, projenin **kendi B4-1 bulgusunun birebir aynısıdır**: sızan bir kilit,
+kalıcı olarak yazmaya kapanan bir ağaç, ve araç içi çıkış yok. Aracı yazarken
+düştüğümüz tuzağa aracı kullanırken de düşüyoruz — bu tesadüf değil, sınıfın
+kendisi.
+
+**Yapılacaklar:**
+- Depo durumunu **git'siz** oku: `find`, `ls`, dosya okuma.
+- Yapılandırma gerekiyorsa `.git/config` gibi dosyaları **düz metin** yaz,
+  `git config` çağırma.
+- Silinmesi gereken dosyayı `_to_delete/` altına **taşı** ve Onur'a söyle.
+- Git işi gerekiyorsa **komutu yaz, Onur koşsun.**
+
 ## 5. ALINMIŞ KARARLAR
 
 Yeniden tartışma; değiştirmek istiyorsan **gerekçeyle** aç ve bir ADR yaz.
