@@ -1,0 +1,20 @@
+# =============================================================================
+# SATIR SONU DÖNÜŞÜMÜ BU DEPODA TAMAMEN KAPALIDIR — BU BİR KAPI GEREĞİDİR.
+#
+# hafiza.py dosyaları BAYT-TAM hash'ler (`sha_dosya` "rb" ile okur). Mühürlenen
+# defterler arasında KULLANICININ ELLE DÜZENLEDİĞİ dosyalar da var:
+#   .hafizarc · KONULAR.md · SAKLAMA_PLANI.md
+# ve kanıt tabanı:
+#   arsiv/hafiza/_CIPA.json · _ZINCIR.jsonl · _KAYNAK*.md · HAFIZA_*.md
+#
+# Git'in `core.autocrlf` dönüşümü bu dosyaların SHA'sını değiştirir. Sonuç:
+#   [H0] defter MUHURSUZ degismis
+# — hiçbir tahrif yokken, HER Windows kullanıcısında, HER seferinde.
+# (Fable 5, 4. tur denetimi §3.5 · B4-9 ile aynı sınıf.)
+#
+# `-text` = "bu dosyalara satır sonu dönüşümü UYGULAMA". Dosyalar depoda LF'tir
+# ve checkout'ta LF kalır. Bu, kullanıcının global git ayarını EZER — bilerek.
+#
+# Bu satırı gevşetmek isteyen: önce H0'ın Windows'ta yeşil kaldığını ÖLÇ.
+# =============================================================================
+* -text

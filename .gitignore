@@ -1,0 +1,34 @@
+# --- geçici / scratch ---
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# --- aracın kendi ürettiği geçici çıktılar ---
+# B4-5: hata izi bugün cwd'ye yazılıyor (proje ağacının DIŞINA). v2.5.0'da
+# <kok>/arsiv/hafiza/ altına taşınacak; o güne kadar burada tutuluyor ki
+# kazara commit'lenmesin (mutlak yerel yollar + yığın izi içerir).
+hafiza_hata_izi.txt
+
+# --- deneme/kanıt koşumlarının bıraktığı projeler ---
+deneme/
+skill/scripts/deneme/
+/t2/
+/b4/
+/h1test/
+sabotaj.log
+
+# --- paketleme çıktısı (kaynağı skill/ dizinidir) ---
+*.skill
+
+# =============================================================================
+# ASLA YOKSAYMA — bunlar kanıt tabanıdır, .gitignore'a girerlerse H9 kırmızı yanar
+# ve zincir "tarih" olmaktan çıkıp yalnızca bir dosya olur:
+#   PROJE_HAFIZA.md · .hafizarc · KONULAR.md · SAKLAMA_PLANI.md
+#   kararlar/** · arsiv/hafiza/_CIPA.json · _ZINCIR.jsonl · _KAYNAK*.md
+#   arsiv/hafiza/HAFIZA_*.md · _KORUNAN.json · _DUZELTMELER.json
+#   _YENI_SATIRLAR.txt · _KOVA.json · _TASINMA.jsonl
+# =============================================================================

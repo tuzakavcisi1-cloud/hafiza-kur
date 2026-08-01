@@ -1,0 +1,156 @@
+# .github/workflows/capraz.yml
+#
+# FAZ 0 — ÖLÇ, DÜZELTME.
+# Bu iş akışı hiçbir şeyi düzeltmez; yalnız "hangi platformda ne kırılıyor"u ÖLÇER.
+# Bu yüzden HER adım `continue-on-error: true` ile koşar: amaç yeşil almak değil,
+# KIRMIZI LİSTEYİ ÜRETMEK. Liste çıktıktan sonra bu bayrak kaldırılır.
+#
+# Public repo'da GitHub-hosted runner'lar (ubuntu/windows/macos) ücretsiz ve
+# dakika limitsizdir. Private repo'da çarpanlar: Windows 2x, macOS 10x.
+
+name: capraz-olcum
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+
+  # ---------------------------------------------------------------------------
+  # 1) ÜÇ PLATFORM × İKİ PYTHON — kanıt koşucuları
+  # ---------------------------------------------------------------------------
+  kanit:
+    name: kanit ${{ matrix.os }} py${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false          # bir platform düşse de ötekiler ölçülsün
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python: ["3.11", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: ortam kimligi
+        shell: bash
+        run: |
+          python -c "import sys,platform,os,sqlite3;print('py',sys.version);print('platform',platform.platform());print('fs-encoding',sys.getfilesystemencoding());print('default-encoding',__import__('locale').getpreferredencoding(False));print('sqlite',sqlite3.sqlite_version)"
+
+      - name: SHA256 dogrulamasi
+        shell: bash
+        run: python -c "import hashlib;print(hashlib.sha256(open('skill/scripts/hafiza.py','rb').read()).hexdigest().upper())"
+
+      - name: t_y3 — temiz hata kanitlari (20 senaryo)
+        continue-on-error: true
+        shell: bash
+        working-directory: skill/scripts
+        run: python t_y3.py
+
+      - name: isir — taze projede mutant kaniti
+        continue-on-error: true
+        shell: bash
+        working-directory: skill/scripts
+        run: |
+          mkdir -p deneme && git init -q deneme
+          python hafiza.py kur  --kok=deneme --ad "CI"
+          python hafiza.py kapi --kok=deneme || echo "kapi exit=$?"
+          python hafiza.py isir --kok=deneme || echo "isir exit=$?"
+
+      - name: isir — derle sonrasi TAM kosum
+        continue-on-error: true
+        shell: bash
+        working-directory: skill/scripts
+        run: |
+          python hafiza.py not   --kok=deneme --konu=genel-durum --metin="ci ilk not"
+          python hafiza.py derle --kok=deneme
+          python hafiza.py isir  --kok=deneme || echo "isir exit=$?"
+
+      - name: t_y42 — davranis kanitlari (58 senaryo, ~13 dk)
+        continue-on-error: true
+        shell: bash
+        working-directory: skill/scripts
+        run: python t_y42.py
+
+      # NOT: B-6 (300k satirda kapi < 8 sn) CI runner'inda buyuk olasilikla KALDI der.
+      # Bu bir KOD kusuru degil, TEST kusurudur (kalibrasyonsuz mutlak duvar saati).
+      # Fable 4. tur, §3.6. Faz F'de referans-ise gore kalibre edilecek.
+
+      - name: kirik liste artefakti
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kanit-${{ matrix.os }}-py${{ matrix.python }}
+          path: |
+            skill/scripts/hafiza_hata_izi.txt
+            skill/scripts/deneme/**
+          if-no-files-found: ignore
+
+  # ---------------------------------------------------------------------------
+  # 2) WINDOWS PROBU — Y-1 hipotezi: os.kill(pid, 0) olcmez mi, ates mi eder?
+  #     bpo-14480 CLOSED-REJECTED: "0 has no special meaning on Windows"
+  #     Bu is bunu OLCER. Tek amaci bu.
+  # ---------------------------------------------------------------------------
+  win_kill_probu:
+    name: Y-1 probu (windows)
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: os.kill(pid, 0) davranisi
+        continue-on-error: true
+        shell: bash
+        run: python faz0/win_kill_probu.py
+
+  # ---------------------------------------------------------------------------
+  # 3) ORTAM SINIFI — root olmayan kullanici · dolu disk · salt-okunur
+  #     Fable 4. tur §9: "Kor noktan bir dusunce hatasi degil, bir ORTAM eksigi."
+  #     Uc YUKSEK bulgunun ucu de (B4-1, B4-3, B4-4) yalniz burada gorunuyor.
+  # ---------------------------------------------------------------------------
+  ortam:
+    name: ortam sinifi (linux)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: B4-1 / B4-3 / B4-4 yeniden uretimi
+        continue-on-error: true
+        run: sudo bash faz0/ortam_olcum.sh
+
+  # ---------------------------------------------------------------------------
+  # 4) KOD KALITESI — calisma-zamani bagimliligi DEGIL, gelistirme bagimliligi.
+  #     hafiza.py bunlari import etmez; sifir-bagimlilik felsefesi bozulmaz.
+  # ---------------------------------------------------------------------------
+  kalite:
+    name: ruff / mypy / bandit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install ruff mypy bandit
+      - name: ruff — gercek hata sinifi (bugun 30 bulgu)
+        continue-on-error: true
+        run: ruff check --isolated --select F,E9,B,S,PLE skill/scripts/hafiza.py
+      - name: ruff — stil (bugun 345 bulgu, bilgi amacli)
+        continue-on-error: true
+        run: ruff check --isolated --statistics skill/scripts/hafiza.py
+      - name: mypy (bugun 1 hata)
+        continue-on-error: true
+        run: mypy --ignore-missing-imports skill/scripts/hafiza.py
+      - name: bandit (bugun 20 bulgu, hepsi LOW)
+        continue-on-error: true
+        run: bandit -r skill/scripts/hafiza.py
